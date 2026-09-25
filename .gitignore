@@ -1,0 +1,10 @@
+.env
+.DS_Store
+config/*
+cache/*
+backups/*
+fonts/*
+!config/.gitkeep
+!cache/.gitkeep
+!backups/.gitkeep
+!fonts/.gitkeep

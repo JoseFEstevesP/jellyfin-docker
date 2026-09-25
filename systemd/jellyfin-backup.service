@@ -1,0 +1,15 @@
+[Unit]
+Description=Copia de seguridad de la configuracion de Jellyfin
+Documentation=https://github.com/JoseFEstevesP/jellyfin-docker
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/jellyfin-docker
+Environment=JELLYFIN_BACKUP_KEEP=2
+ExecStart=%h/jellyfin-docker/scripts/backup.sh
+Nice=10
+IOSchedulingClass=idle
+CPUSchedulingPolicy=idle
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,119 @@
+services:
+  jellyfin:
+    image: "${JELLYFIN_IMAGE:-jellyfin/jellyfin:10.11.11}"
+    user: "${PUID:-1000}:${PGID:-1000}"
+    group_add:
+      - "${RENDER_GID:-105}"
+    devices:
+      - "${RENDER_DEVICE:-/dev/dri/renderD128}:/dev/dri/renderD128"
+    ports:
+      - name: http
+        target: 8096
+        published: "${JELLYFIN_HTTP_PORT:-8096}"
+        host_ip: "${JELLYFIN_HTTP_BIND_ADDRESS:-127.0.0.1}"
+        protocol: tcp
+      - name: discovery
+        target: 7359
+        published: "${JELLYFIN_DISCOVERY_PORT:-7359}"
+        host_ip: "${JELLYFIN_DISCOVERY_BIND_ADDRESS:-127.0.0.1}"
+        protocol: udp
+    volumes:
+      - type: bind
+        source: ./config
+        target: /config
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./cache
+        target: /cache
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${MEDIA_PATH:-/media}"
+        target: /media/series
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${MOVIES_PATH:-/media/peliculas}"
+        target: /media/peliculas
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./fonts
+        target: /usr/local/share/fonts/custom
+        read_only: true
+        bind:
+          create_host_path: false
+    environment:
+      TZ: "${TZ:-Etc/UTC}"
+      JELLYFIN_PublishedServerUrl: "${JELLYFIN_PUBLISHED_SERVER_URL:-}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2.11.4-alpine
+    entrypoint:
+      - /bin/sh
+      - /caddy-entrypoint.sh
+    profiles:
+      - https
+    depends_on:
+      jellyfin:
+        condition: service_healthy
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+      - "443:443/udp"
+    volumes:
+      - type: bind
+        source: ./scripts/caddy-entrypoint.sh
+        target: /caddy-entrypoint.sh
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./Caddyfile
+        target: /etc/caddy/Caddyfile
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: volume
+        source: caddy_data
+        target: /data
+      - type: volume
+        source: caddy_config
+        target: /config
+    environment:
+      DOMAIN_NAME: "${DOMAIN_NAME:-}"
+      JELLYFIN_PUBLISHED_SERVER_URL: "${JELLYFIN_PUBLISHED_SERVER_URL:-}"
+      JELLYFIN_HTTP_BIND_ADDRESS: "${JELLYFIN_HTTP_BIND_ADDRESS:-127.0.0.1}"
+    restart: "on-failure:3"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  caddy_data:
+  caddy_config:
