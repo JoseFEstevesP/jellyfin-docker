@@ -8,3 +8,5 @@ fonts/*
 !cache/.gitkeep
 !backups/.gitkeep
 !fonts/.gitkeep
+.playwright-mcp/
+jellyfin-login.png
