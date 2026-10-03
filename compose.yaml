@@ -114,6 +114,208 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  prowlarr:
+    image: "${PROWLARR_IMAGE:-lscr.io/linuxserver/prowlarr:2.6.5}"
+    profiles:
+      - media
+    environment:
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      TZ: "${TZ:-Etc/UTC}"
+    ports:
+      - name: http
+        target: 9696
+        published: "${PROWLARR_HTTP_PORT:-9696}"
+        host_ip: "${PROWLARR_HTTP_BIND_ADDRESS:-127.0.0.1}"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: ./config/prowlarr
+        target: /config
+        bind:
+          create_host_path: false
+    restart: unless-stopped
+    mem_limit: "${PROWLARR_MEM_LIMIT:-256m}"
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  sonarr:
+    image: "${SONARR_IMAGE:-lscr.io/linuxserver/sonarr:4.0.20}"
+    profiles:
+      - media
+    environment:
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      TZ: "${TZ:-Etc/UTC}"
+    ports:
+      - name: http
+        target: 8989
+        published: "${SONARR_HTTP_PORT:-8989}"
+        host_ip: "${SONARR_HTTP_BIND_ADDRESS:-127.0.0.1}"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: ./config/sonarr
+        target: /config
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${MEDIA_PATH:-/media}"
+        target: /media/series
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${MOVIES_PATH:-/media/peliculas}"
+        target: /media/peliculas
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${DOWNLOADS_PATH:-/media/downloads}"
+        target: /downloads
+        bind:
+          create_host_path: false
+    restart: unless-stopped
+    mem_limit: "${SONARR_MEM_LIMIT:-384m}"
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8989/ping || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  radarr:
+    image: "${RADARR_IMAGE:-lscr.io/linuxserver/radarr:6.4.4}"
+    profiles:
+      - media
+    environment:
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      TZ: "${TZ:-Etc/UTC}"
+    ports:
+      - name: http
+        target: 7878
+        published: "${RADARR_HTTP_PORT:-7878}"
+        host_ip: "${RADARR_HTTP_BIND_ADDRESS:-127.0.0.1}"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: ./config/radarr
+        target: /config
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${MOVIES_PATH:-/media/peliculas}"
+        target: /media/peliculas
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${DOWNLOADS_PATH:-/media/downloads}"
+        target: /downloads
+        bind:
+          create_host_path: false
+    restart: unless-stopped
+    mem_limit: "${RADARR_MEM_LIMIT:-384m}"
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:7878/ping || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  qbittorrent:
+    image: "${QBITTORRENT_IMAGE:-lscr.io/linuxserver/qbittorrent:5.2.4}"
+    profiles:
+      - media
+    environment:
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      TZ: "${TZ:-Etc/UTC}"
+      WEBUI_PORT: "8080"
+    ports:
+      - name: http
+        target: 8080
+        published: "${QBITTORRENT_HTTP_PORT:-8080}"
+        host_ip: "${QBITTORRENT_HTTP_BIND_ADDRESS:-127.0.0.1}"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: ./config/qbittorrent
+        target: /config
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${DOWNLOADS_PATH:-/media/downloads}"
+        target: /downloads
+        bind:
+          create_host_path: false
+    restart: unless-stopped
+    mem_limit: "${QBITTORRENT_MEM_LIMIT:-256m}"
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  seerr:
+    image: "${SEERR_IMAGE:-ghcr.io/seerr-team/seerr:v3.5.0}"
+    profiles:
+      - media
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      TZ: "${TZ:-Etc/UTC}"
+      PORT: "5055"
+    ports:
+      - name: http
+        target: 5055
+        published: "${SEERR_HTTP_PORT:-5055}"
+        host_ip: "${SEERR_HTTP_BIND_ADDRESS:-127.0.0.1}"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: ./config/seerr
+        target: /app/config
+        bind:
+          create_host_path: false
+    restart: unless-stopped
+    init: true
+    mem_limit: "${SEERR_MEM_LIMIT:-512m}"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:5055/api/v1/settings/public || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   caddy_data:
   caddy_config:
