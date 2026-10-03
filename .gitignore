@@ -10,3 +10,4 @@ fonts/*
 !fonts/.gitkeep
 .playwright-mcp/
 jellyfin-login.png
+.playwright-mcp
