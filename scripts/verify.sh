@@ -153,6 +153,32 @@ check_timer() {
   fi
 }
 
+check_media_services() {
+  local service
+  local container_id
+  local state
+  local checked=false
+
+  for service in prowlarr sonarr radarr qbittorrent seerr; do
+    container_id="$(docker compose --project-directory "$project_dir" --profile media ps -q "$service" 2>/dev/null || true)"
+    if [[ -z "$container_id" ]]; then
+      continue
+    fi
+
+    checked=true
+    state="$(docker inspect --format '{{.State.Status}}' "$container_id")"
+    if [[ "$state" == "running" ]]; then
+      pass "el contenedor ${service} esta en ejecucion"
+    else
+      fail "el contenedor ${service} esta en estado ${state}"
+    fi
+  done
+
+  if [[ "$checked" == "false" ]]; then
+    pass 'perfil media no desplegado (omitido)'
+  fi
+}
+
 check_compose
 check_scripts
 check_units
@@ -162,6 +188,7 @@ check_gpu
 check_hwa_config
 check_backups
 check_timer
+check_media_services
 
 if (( failures > 0 )); then
   printf '\n%d comprobacion(es) fallida(s).\n' "$failures" >&2

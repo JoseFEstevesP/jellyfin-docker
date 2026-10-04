@@ -6,13 +6,14 @@ Despliegue local de la imagen oficial `jellyfin/jellyfin`, preparado para Fedora
 
 - Imagen oficial fijada a la versión estable `10.11.11`.
 - Persistencia local de configuración, caché, fuentes y copias.
-- Medios definidos por `MEDIA_PATH` y `MOVIES_PATH` en `.env`, montados en `/media/series` y `/media/peliculas` en solo lectura.
+- Medios definidos por `MEDIA_PATH` y `MOVIES_PATH` en `.env`, montados en `/media/series` y `/media/peliculas` en solo lectura. El perfil `media` monta además `MEDIA_ROOT_PATH` en `/media` para poder crear hardlinks.
 - Aceleración Intel mediante `/dev/dri/renderD128` y el grupo `render` (`GID 105`).
 - Puerto web `8096/TCP` y descubrimiento local `7359/UDP`, ligados a la IP LAN configurada.
 - Reinicio automático, parada limpia, `no-new-privileges` y rotación de logs.
 - Caddy opcional para HTTPS y WebSockets.
 - Script de copia de seguridad consistente con rotación y timer systemd semanal.
 - `scripts/verify.sh` para comprobar el despliegue completo en un comando.
+- Perfil `media` opcional con Prowlarr, Sonarr, Radarr, qBittorrent y Seerr para automatizar la adquisición de la biblioteca.
 
 ## Inicio
 
@@ -51,7 +52,101 @@ Si el contenedor se recrea y Jellyfin vuelve a la configuración por defecto, re
 
 La HD 520 es una GPU Skylake de sexta generación con capacidades limitadas: no esperes aceleración completa para HEVC de 10 bits.
 
-## Copias de seguridad
+## Biblioteca automática (perfil `media`)
+
+El perfil `media` añade el stack de gestión y descarga: **Prowlarr** (indexadores), **Sonarr** (series), **Radarr** (películas), **qBittorrent** (descargas) y **Seerr** (peticiones de los usuarios, heredero de Jellyseerr y Overseerr). El flujo es `Seerr → Sonarr/Radarr → qBittorrent → biblioteca → Jellyfin`.
+
+Para el uso diario, las rutas donde comprobar una descarga y los errores frecuentes, consulta el [manual de operación](MANUAL.md).
+
+Sin este perfil el despliegue es exactamente el mismo: `jellyfin` solo, y `jellyfin` + `caddy` con `--profile https`.
+
+### Requisitos
+
+Los directorios de configuración y los de medios deben existir antes del primer arranque. `MEDIA_ROOT_PATH` es el padre común y `DOWNLOADS_PATH` su subcarpeta `torrents`:
+
+```bash
+mkdir -p config/{prowlarr,sonarr,radarr,qbittorrent,seerr} \
+  "$MEDIA_ROOT_PATH"/{series,peliculas,torrents}
+```
+
+Radarr y Sonarr montan `MEDIA_ROOT_PATH` entero en `/media` con una sola entrada de compose, de modo que las descargas (`/media/torrents`) y la biblioteca (`/media/peliculas`, `/media/series`) caen en el mismo montaje. Dos montajes separados que apuntan al mismo disco siguen devolviendo `Cross-device link`, porque el núcleo decide por montaje y no por dispositivo. qBittorrent recibe solo `DOWNLOADS_PATH`, sin acceso de escritura a la biblioteca.
+
+En Btrfs la carpeta de descargas no debe llevar `chattr +C`, porque rompe los hardlinks y cada importación pasa a copiar el archivo entero. Compruébalo con `lsattr -d "$DOWNLOADS_PATH"`.
+
+No reutilices la carpeta de descargas de otro gestor (Metube, por ejemplo): dos escritores sobre el mismo árbol desordena las importaciones de Sonarr y Radarr.
+
+### Arranque
+
+```bash
+docker compose --profile media pull
+docker compose --profile media up -d
+docker compose --profile media ps
+```
+
+Las interfaces quedan en `127.0.0.1` por defecto: Prowlarr `9696`, Sonarr `8989`, Radarr `7878`, qBittorrent `8080` y Seerr `5055`. Es la opción recomendada en una red doméstica: solo el servidor las ve, así que no quedan alcanzables desde la LAN.
+
+### Acceso remoto por túnel SSH
+
+Con las interfaces en `127.0.0.1` no necesitas dominio ni DNS para managearlas desde tu portátil. Un túnel SSH reenvía los puertos que quieras sin abrir nada en el firewall:
+
+```bash
+ssh -N -L 5055:127.0.0.1:5055 -L 7878:127.0.0.1:7878 \
+       -L 8989:127.0.0.1:8989 -L 8080:127.0.0.1:8080 \
+       -L 9696:127.0.0.1:9696 usuario@servidor
+```
+
+Abres entonces `http://127.0.0.1:5055` para Seerr, `:7878` para Radarr y así sucesivamente. Para no repetirlos, `~/.ssh/config`:
+
+```
+Host servidor
+  HostName 192.168.0.103
+  User usuario
+  LocalForward 5055 127.0.0.1:5055
+  LocalForward 7878 127.0.0.1:7878
+  LocalForward 8989 127.0.0.1:8989
+  LocalForward 8080 127.0.0.1:8080
+  LocalForward 9696 127.0.0.1:9696
+```
+
+Para Jellyfin, que sí se queda en la IP de la LAN para la TV y los móviles, no hace falta túnel: `http://192.168.0.103:8096`. Si también lo quieres cerrar, pon `JELLYFIN_HTTP_BIND_ADDRESS=127.0.0.1` y reenvía `8096` y `7359` del mismo modo, aceptando que la discovery por LAN deje de funcionar.
+
+Si prefieres que las interfaces se vean directamente desde la LAN, pon `*_HTTP_BIND_ADDRESS=0.0.0.0` en `.env` para las que quieras. Las cinco exigen credenciales, así que no las expongas a Internet; para eso están el túnel SSH, una VPN o el proxy con Caddy de más abajo.
+
+Cada servicio tiene `mem_limit` para acotar el consumo: la suma del stack ronda 1,3 GB como techo. En reposo los cinco servicios consumen unos 270 MB, así que las cotas dejan margen para indexar y transcodificar. Los valores se ajustan en `.env` (`SONARR_MEM_LIMIT`, `SEERR_MEM_LIMIT`, etc.) según la memoria disponible.
+
+Las imágenes de LinuxServer arrancan con `s6-overlay`, que exige ser el proceso PID 1 del contenedor. Por eso esos cuatro servicios **no** llevan `init: true`: Docker insertaría su propio init delante y el contenedor entraría en un bucle de reinicios con `s6-overlay-suexec: fatal: can only run as pid 1`. Seerr sí lo lleva porque su imagen no usa `s6-overlay`.
+
+### Orden de configuración
+
+El orden importa: cada aplicación necesita que la anterior exista para añadirla.
+
+1. **qBittorrent** en `http://127.0.0.1:8080`. Crea el usuario y guarda la contraseña. En **Herramientas > Preferencias > Descargas**, deja la carpeta por defecto en `/media/torrents` y marca los archivos como completados al finalizar. No hace falta crear categorías a mano: Sonarr y Radarr registran las suyas (`sonarr` y `radarr`) al añadir qBittorrent como cliente de descargas, y cada aplicación ignora así los torrents de la otra.
+2. **Prowlarr** en `http://127.0.0.1:9696`. Configura los indexadores que te correspondan y, en **Ajustes > Aplicaciones**, añade `http://sonarr:8989` y `http://radarr:7878` para compartir los indexadores.
+3. **Sonarr** en `http://127.0.0.1:8989`. Añade qBittorrent como cliente de descargas. En **Medios > Carpeta raíz** usa `/media/series` y en **Descargas** el tipo *hardlink*. Crea un tipo de serie *Anime* si la biblioteca mezcla anime, porque usa convenciones de nombres distintas.
+4. **Radarr** en `http://127.0.0.1:7878`. Igual que Sonarr, con `/media/peliculas` como carpeta raíz.
+5. **Seerr** en `http://127.0.0.1:5055`. Conecta Jellyfin y después Sonarr y Radarr. A partir de ahí los usuarios piden desde Seerr y la descarga arranca sola.
+
+### Hardlinks
+
+Como Radarr y Sonarr montan `MEDIA_ROOT_PATH` en un único `/media`, los **hardlinks** del archivo descargado (`/media/torrents`) a la biblioteca (`/media/peliculas`, `/media/series`) funcionan: la importación es instantánea, no ocupa espacio adicional y el seed sigue vivo al borrar la copia de la biblioteca. qBittorrent debe informar `/media/torrents` como ruta de guardado para que Radarr vea ese mismo archivo dentro de su montaje.
+
+Si la importación avisa de un fallo de hardlink y cae a copiar, el árbol tiene `+C` activado o el cliente de descargas sigue informando de una ruta distinta de `/media/torrents`.
+
+### Calidad y tu GPU
+
+La HD 520 no decodifica HEVC de 10 bits con comodidad. Deja los perfiles de calidad de Radarr y Sonarr en `1080p` y reserva `2160p` para títulos concretos; el 4K se verá por *direct play* solo en dispositivos capaces.
+
+### TV en vivo
+
+Jellyfin gestiona la TV en vivo sin ningún contenedor adicional, desde **Panel de control > TV en vivo**:
+
+1. Añade un sintonizador de tipo **M3U** con la URL de tu lista de canales o el archivo local.
+2. Añade **XMLTV** como fuente de guía y mapea cada canal con su identificador. Con la guía cargada se pueden grabar canales desde el propio Jellyfin.
+3. Si usas un HDHomeRun físico, el contenedor debe ir en red `host` porque Jellyfin se conecta a un puerto UDP variable.
+
+### Copias de seguridad
+
+Las configuraciones de los servicios del perfil `media` viven en `config/`, que es justo el directorio que `scripts/backup.sh` ya archiva: quedan respaldadas sin tocar el script. Lo que no entra en la copia es `DOWNLOADS_PATH`, porque son datos descargados y se recuperan desde el origen.
 
 Jellyfin 10.11.11 permite crear copias integradas desde **Panel de control > Copias de seguridad**. Para una copia manual y consistente de toda la configuración, ejecuta:
 
@@ -162,7 +257,7 @@ docker compose up -d --remove-orphans
 docker compose down
 ```
 
-`scripts/verify.sh` comprueba en un solo comando la validity de `compose.yaml`, la sintaxis de los scripts, las unidades systemd, el estado y la salud del contenedor, la inicialización de VA-API, la aceleración configurada, la validez de la copia más reciente y que el timer esté habilitado. Devuelve código distinto de cero si algo falla, así que sirve como comprobación tras cualquier cambio.
+`scripts/verify.sh` comprueba en un solo comando la validez de `compose.yaml`, la sintaxis de los scripts, las unidades systemd, el estado y la salud del contenedor, la inicialización de VA-API, la aceleración configurada, la validez de la copia más reciente y que el timer esté habilitado. Además, si el perfil `media` está desplegado, comprueba que sus cinco contenedores estén en ejecución; si no lo está, lo omite. Devuelve código distinto de cero si algo falla, así que sirve como comprobación tras cualquier cambio.
 
 Si Caddy está activo, usa el perfil en sus operaciones:
 
@@ -170,6 +265,14 @@ Si Caddy está activo, usa el perfil en sus operaciones:
 docker compose --profile https logs -f caddy
 docker compose --profile https pull caddy
 docker compose --profile https up -d
+```
+
+Si el perfil `media` está activo, sus operaciones llevan el perfil explícito:
+
+```bash
+docker compose --profile media logs -f sonarr radarr
+docker compose --profile media pull
+docker compose --profile media up -d
 ```
 
 `docker compose down` no elimina los datos porque configuración, caché, fuentes y copias están en directorios locales. No uses `down -v` mientras el perfil Caddy esté activo, porque sus volúmenes contienen certificados y certificados de cuenta.
@@ -181,3 +284,7 @@ docker compose --profile https up -d
 - Red y HTTPS: https://jellyfin.org/docs/general/post-install/networking/
 - Copias y restauración: https://jellyfin.org/docs/general/administration/backup-and-restore/
 - Unidades systemd de usuario: https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html
+- TV en vivo y sintonizadores: https://jellyfin.org/docs/general/server/live-tv/
+- Peticiones de usuarios (Seerr): https://docs.seerr.dev/
+- Contenedores de Servarr y qBittorrent: https://hub.docker.com/u/linuxserver
+- Operación diaria, rutas y diagnóstico: [MANUAL.md](MANUAL.md)
