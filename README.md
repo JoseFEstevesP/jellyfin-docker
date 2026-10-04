@@ -56,6 +56,8 @@ La HD 520 es una GPU Skylake de sexta generación con capacidades limitadas: no 
 
 El perfil `media` añade el stack de gestión y descarga: **Prowlarr** (indexadores), **Sonarr** (series), **Radarr** (películas), **qBittorrent** (descargas) y **Seerr** (peticiones de los usuarios, heredero de Jellyseerr y Overseerr). El flujo es `Seerr → Sonarr/Radarr → qBittorrent → biblioteca → Jellyfin`.
 
+Para el uso diario, las rutas donde comprobar una descarga y los errores frecuentes, consulta el [manual de operación](MANUAL.md).
+
 Sin este perfil el despliegue es exactamente el mismo: `jellyfin` solo, y `jellyfin` + `caddy` con `--profile https`.
 
 ### Requisitos
@@ -285,3 +287,4 @@ docker compose --profile media up -d
 - TV en vivo y sintonizadores: https://jellyfin.org/docs/general/server/live-tv/
 - Peticiones de usuarios (Seerr): https://docs.seerr.dev/
 - Contenedores de Servarr y qBittorrent: https://hub.docker.com/u/linuxserver
+- Operación diaria, rutas y diagnóstico: [MANUAL.md](MANUAL.md)
