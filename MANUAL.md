@@ -29,6 +29,17 @@ Cada paso es independiente: si Sonarr no encuentra nada, el problema nunca está
 
 Para elegir tú el release, ve al buscador interactivo de Sonarr o Radarr (**Series > la serie > Episodes > Search**, o **Movies > la película > Search**), ordena por *Seeders* y pulsa **Grab** sobre uno concreto.
 
+Los releases que deja el buscador también se pueden agarrar por API. `GET /api/v3/release?episodeId=<id>` devuelve la lista con su `guid`, y `POST /api/v3/release` con `guid`, `indexerId`, `episodeIds` y `seriesId` lo agarra:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8989/api/v3/release \
+  -H 'X-Api-Key: <API_KEY>' -H 'Content-Type: application/json' \
+  -d '{"guid":"https://animetosho.net/download/364098/torrent",
+       "indexerId":1,"seriesId":1,"episodeIds":[27]}'
+```
+
+Ordena siempre por *Seeders* y no por tamaño: un release pequeño con una sola semilla puede tardar más que un pack con diez.
+
 ## Verificar una descarga
 
 La descarga vive en **dos rutas distintas** y conviene distinguirlas:
@@ -55,6 +66,14 @@ Los datos van primero a `torrents/` y al completarse Sonarr crea un **hardlink**
 ## Cuánto ocupa
 
 Un pack de temporada pesa mucho más que lo que sugiere el título: 13 episodios en BD 1080p HEVC ocupan del orden de **30 GB**. Antes de agarrar un pack, mira el tamaño en el buscador. Con anime conviene un perfil de calidad propio en Sonarr que limite a `1080p`.
+
+## Velocidad
+
+La velocidad no depende del tamaño del release sino del **número de semillas**. Un archivo de 200 MB con una sola semilla puede tardar más que un pack de 30 GB con diez, porque con un seed dependes al 100 % de esa persona y su ancho de banda.
+
+Fíjate en *Seeders* antes que en el tamaño, y recuerda que *Peers* a 0 con *Seeders* a 1 significa que todo el peso del seed recae en un único upload. Si tras unos minutos no arranca, el seed está ocupado o lento: cancelar y elegir otro release con más semillas suele ser más rápido que esperar.
+
+Para saber si un torrent avanza de verdad, compara el porcentaje entre dos consultas separadas. Si no se mueve, está *stalled* y conviene cambiarlo.
 
 ## Indexadores
 
@@ -99,7 +118,10 @@ Estas cosas ocuparon tiempo y conviene recordarlas:
 - **`MissingEpisodeSearch` es global.** El `seriesId` que le mandes en el cuerpo del comando se ignora y busca en *toda* la librería. Para una sola serie usa `SeriesSearch` con su `seriesId`, o hazlo desde la UI. Un `MissingEpisodeSearch` mal lanzado puede agarrar temporadas completas de otras series.
 - **Añadir una serie por API no monitoriza sus episodios.** La serie queda `monitored=True` pero cada episodio sigue en `monitored=False`, y entonces toda búsqueda devuelve cero resultados y parece que el indexador falla. Hay que monitorizar los episodios explícitamente.
 - **Los packs de anime se cuelan en la numeración.** Al ser series con temporadas, specials (`Season 0`) y numeración absoluta, un pack puede mapear a varios episodios. Revisa *Seeders* y tamaño antes de agarrar.
-- **La API de Sonarr v4 no tiene `id` numérico en los releases**, solo `guid`, y `POST /api/v3/release/{guid}` devuelve `405`. Para agarres manuales, usa la UI.
+- **Los releases de la API de Sonarr v4 no tienen `id` numérico**, solo `guid`, y `POST /api/v3/release/{guid}` devuelve `405`. El grab manual sí se puede hacer por API, pero con otra ruta: `POST /api/v3/release` y en el cuerpo `guid`, `indexerId`, `episodeIds` y `seriesId`. Devuelve `200` con el release aceptado.
+- **El blocklist de Sonarr v4 no es accesible por API**: `GET /api/v3/release/blocklist` devuelve `404`. Para bloquear un release, **Activity > History**, clic derecho sobre él > *Blocklist Release*.
+- **Bajar el `cutoff` desbloquea releases que estaban rechazados**, y si hay una búsqueda en curso la completes y los agarra en lote. Revisa la cola antes y después de tocar el perfil de calidad.
+- **El `cutoff` se expresa con el ID de grupo, no de calidad.** Si mandas el ID de una calidad concreta la API responde `Cutoff must be an allowed quality or group`. Los grupos se identifican por valores como `1000`.
 - **`POST /api/v1/applications/{id}/sync` en Prowlarr devuelve `405`.** La sincronización de indexadores es automática; no hace falta forzarlla.
 - **qBittorrent 5.x rechaza guardar la ruta por API**: `setPreferences` devuelve `400 Bad Request`. Deja el contenedor parado y edita `config/qbittorrent/qBittorrent/qBittorrent.conf`, en `Downloads\SavePath` y `Downloads\TempPath`.
 - **El bind de `.env` puede no ser el real.** Si cambias una dirección, `docker compose ps` y `docker inspect` muestran lo realmente publicado; recrea solo el servicio afectado.
