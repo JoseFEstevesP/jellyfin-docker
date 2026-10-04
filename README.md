@@ -81,7 +81,34 @@ docker compose --profile media up -d
 docker compose --profile media ps
 ```
 
-Las interfaces quedan en `127.0.0.1` por defecto: Prowlarr `9696`, Sonarr `8989`, Radarr `7878`, qBittorrent `8080` y Seerr `5055`. Para alcanzarlas desde la LAN hay que poner `*_HTTP_BIND_ADDRESS=0.0.0.0` en `.env`; las cinco exigen credenciales, así que no las expongas a Internet.
+Las interfaces quedan en `127.0.0.1` por defecto: Prowlarr `9696`, Sonarr `8989`, Radarr `7878`, qBittorrent `8080` y Seerr `5055`. Es la opción recomendada en una red doméstica: solo el servidor las ve, así que no quedan alcanzables desde la LAN.
+
+### Acceso remoto por túnel SSH
+
+Con las interfaces en `127.0.0.1` no necesitas dominio ni DNS para managearlas desde tu portátil. Un túnel SSH reenvía los puertos que quieras sin abrir nada en el firewall:
+
+```bash
+ssh -N -L 5055:127.0.0.1:5055 -L 7878:127.0.0.1:7878 \
+       -L 8989:127.0.0.1:8989 -L 8080:127.0.0.1:8080 \
+       -L 9696:127.0.0.1:9696 usuario@servidor
+```
+
+Abres entonces `http://127.0.0.1:5055` para Seerr, `:7878` para Radarr y así sucesivamente. Para no repetirlos, `~/.ssh/config`:
+
+```
+Host servidor
+  HostName 192.168.0.103
+  User usuario
+  LocalForward 5055 127.0.0.1:5055
+  LocalForward 7878 127.0.0.1:7878
+  LocalForward 8989 127.0.0.1:8989
+  LocalForward 8080 127.0.0.1:8080
+  LocalForward 9696 127.0.0.1:9696
+```
+
+Para Jellyfin, que sí se queda en la IP de la LAN para la TV y los móviles, no hace falta túnel: `http://192.168.0.103:8096`. Si también lo quieres cerrar, pon `JELLYFIN_HTTP_BIND_ADDRESS=127.0.0.1` y reenvía `8096` y `7359` del mismo modo, aceptando que la discovery por LAN deje de funcionar.
+
+Si prefieres que las interfaces se vean directamente desde la LAN, pon `*_HTTP_BIND_ADDRESS=0.0.0.0` en `.env` para las que quieras. Las cinco exigen credenciales, así que no las expongas a Internet; para eso están el túnel SSH, una VPN o el proxy con Caddy de más abajo.
 
 Cada servicio tiene `mem_limit` para acotar el consumo: la suma del stack ronda 1,3 GB como techo. En reposo los cinco servicios consumen unos 270 MB, así que las cotas dejan margen para indexar y transcodificar. Los valores se ajustan en `.env` (`SONARR_MEM_LIMIT`, `SEERR_MEM_LIMIT`, etc.) según la memoria disponible.
 
