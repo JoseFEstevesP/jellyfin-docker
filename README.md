@@ -6,7 +6,7 @@ Despliegue local de la imagen oficial `jellyfin/jellyfin`, preparado para Fedora
 
 - Imagen oficial fijada a la versión estable `10.11.11`.
 - Persistencia local de configuración, caché, fuentes y copias.
-- Medios definidos por `MEDIA_PATH` y `MOVIES_PATH` en `.env`, montados en `/media/series` y `/media/peliculas` en solo lectura.
+- Medios definidos por `MEDIA_PATH` y `MOVIES_PATH` en `.env`, montados en `/media/series` y `/media/peliculas` en solo lectura. El perfil `media` monta además `MEDIA_ROOT_PATH` en `/media` para poder crear hardlinks.
 - Aceleración Intel mediante `/dev/dri/renderD128` y el grupo `render` (`GID 105`).
 - Puerto web `8096/TCP` y descubrimiento local `7359/UDP`, ligados a la IP LAN configurada.
 - Reinicio automático, parada limpia, `no-new-privileges` y rotación de logs.
@@ -60,13 +60,16 @@ Sin este perfil el despliegue es exactamente el mismo: `jellyfin` solo, y `jelly
 
 ### Requisitos
 
-Los directorios de configuración y de descarga deben existir antes del primer arranque, igual que `MEDIA_PATH` y `MOVIES_PATH`:
+Los directorios de configuración y los de medios deben existir antes del primer arranque. `MEDIA_ROOT_PATH` es el padre común y `DOWNLOADS_PATH` su subcarpeta `torrents`:
 
 ```bash
-mkdir -p config/{prowlarr,sonarr,radarr,qbittorrent,seerr} "$DOWNLOADS_PATH"
+mkdir -p config/{prowlarr,sonarr,radarr,qbittorrent,seerr} \
+  "$MEDIA_ROOT_PATH"/{series,peliculas,torrents}
 ```
 
-`DOWNLOADS_PATH` debe estar en el **mismo sistema de archivos** que `MEDIA_PATH` y `MOVIES_PATH`. En Btrfs no debe llevar `chattr +C` sobre la carpeta de descargas, porque rompe los hardlinks y cada importación pasa a copiar el archivo entero. Compruébalo con `lsattr -d "$DOWNLOADS_PATH"`.
+Radarr y Sonarr montan `MEDIA_ROOT_PATH` entero en `/media` con una sola entrada de compose, de modo que las descargas (`/media/torrents`) y la biblioteca (`/media/peliculas`, `/media/series`) caen en el mismo montaje. Dos montajes separados que apuntan al mismo disco siguen devolviendo `Cross-device link`, porque el núcleo decide por montaje y no por dispositivo. qBittorrent recibe solo `DOWNLOADS_PATH`, sin acceso de escritura a la biblioteca.
+
+En Btrfs la carpeta de descargas no debe llevar `chattr +C`, porque rompe los hardlinks y cada importación pasa a copiar el archivo entero. Compruébalo con `lsattr -d "$DOWNLOADS_PATH"`.
 
 No reutilices la carpeta de descargas de otro gestor (Metube, por ejemplo): dos escritores sobre el mismo árbol desordena las importaciones de Sonarr y Radarr.
 
@@ -88,7 +91,7 @@ Las imágenes de LinuxServer arrancan con `s6-overlay`, que exige ser el proceso
 
 El orden importa: cada aplicación necesita que la anterior exista para añadirla.
 
-1. **qBittorrent** en `http://127.0.0.1:8080`. Crea el usuario y guarda la contraseña. En **Herramientas > Preferencias > Descargas**, deja la carpeta por defecto en `/downloads` y marca los archivos como completados al finalizar. Añade la categoría `tv` y `movies` para poder filtrar después.
+1. **qBittorrent** en `http://127.0.0.1:8080`. Crea el usuario y guarda la contraseña. En **Herramientas > Preferencias > Descargas**, deja la carpeta por defecto en `/media/torrents` y marca los archivos como completados al finalizar. No hace falta crear categorías a mano: Sonarr y Radarr registran las suyas (`sonarr` y `radarr`) al añadir qBittorrent como cliente de descargas, y cada aplicación ignora así los torrents de la otra.
 2. **Prowlarr** en `http://127.0.0.1:9696`. Configura los indexadores que te correspondan y, en **Ajustes > Aplicaciones**, añade `http://sonarr:8989` y `http://radarr:7878` para compartir los indexadores.
 3. **Sonarr** en `http://127.0.0.1:8989`. Añade qBittorrent como cliente de descargas. En **Medios > Carpeta raíz** usa `/media/series` y en **Descargas** el tipo *hardlink*. Crea un tipo de serie *Anime* si la biblioteca mezcla anime, porque usa convenciones de nombres distintas.
 4. **Radarr** en `http://127.0.0.1:7878`. Igual que Sonarr, con `/media/peliculas` como carpeta raíz.
@@ -96,7 +99,9 @@ El orden importa: cada aplicación necesita que la anterior exista para añadirl
 
 ### Hardlinks
 
-Con `DOWNLOADS_PATH` en el mismo sistema de archivos, Sonarr y Radarr crean **hardlinks** del archivo descargado a la biblioteca. La importación es instantánea y no ocupa espacio adicional, y el seed sigue funcionando al borrar la copia de la biblioteca. Si la importación muestra un aviso de fallo de hardlink y pasa a copiar, el directorio de descargas está en otro sistema de archivos o tiene `+C` activado.
+Como Radarr y Sonarr montan `MEDIA_ROOT_PATH` en un único `/media`, los **hardlinks** del archivo descargado (`/media/torrents`) a la biblioteca (`/media/peliculas`, `/media/series`) funcionan: la importación es instantánea, no ocupa espacio adicional y el seed sigue vivo al borrar la copia de la biblioteca. qBittorrent debe informar `/media/torrents` como ruta de guardado para que Radarr vea ese mismo archivo dentro de su montaje.
+
+Si la importación avisa de un fallo de hardlink y cae a copiar, el árbol tiene `+C` activado o el cliente de descargas sigue informando de una ruta distinta de `/media/torrents`.
 
 ### Calidad y tu GPU
 

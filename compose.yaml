@@ -165,18 +165,8 @@ services:
         bind:
           create_host_path: false
       - type: bind
-        source: "${MEDIA_PATH:-/media}"
-        target: /media/series
-        bind:
-          create_host_path: false
-      - type: bind
-        source: "${MOVIES_PATH:-/media/peliculas}"
-        target: /media/peliculas
-        bind:
-          create_host_path: false
-      - type: bind
-        source: "${DOWNLOADS_PATH:-/media/downloads}"
-        target: /downloads
+        source: "${MEDIA_ROOT_PATH:-/media}"
+        target: /media
         bind:
           create_host_path: false
     restart: unless-stopped
@@ -216,13 +206,8 @@ services:
         bind:
           create_host_path: false
       - type: bind
-        source: "${MOVIES_PATH:-/media/peliculas}"
-        target: /media/peliculas
-        bind:
-          create_host_path: false
-      - type: bind
-        source: "${DOWNLOADS_PATH:-/media/downloads}"
-        target: /downloads
+        source: "${MEDIA_ROOT_PATH:-/media}"
+        target: /media
         bind:
           create_host_path: false
     restart: unless-stopped
@@ -263,8 +248,8 @@ services:
         bind:
           create_host_path: false
       - type: bind
-        source: "${DOWNLOADS_PATH:-/media/downloads}"
-        target: /downloads
+        source: "${DOWNLOADS_PATH:-/media/torrents}"
+        target: /media/torrents
         bind:
           create_host_path: false
     restart: unless-stopped
