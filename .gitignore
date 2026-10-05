@@ -11,3 +11,4 @@ fonts/*
 .playwright-mcp/
 jellyfin-login.png
 .playwright-mcp
+scripts/simple_qbittorrent_fix.sh
