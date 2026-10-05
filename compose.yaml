@@ -114,6 +114,24 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    ports:
+      - "127.0.0.1:8191:8191"
+    environment:
+      TZ: "${TZ:-Etc/UTC}"
+      LOG_LEVEL: info
+      CAPTCHA_SOLVER: none
+    restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   caddy_data:
   caddy_config:
