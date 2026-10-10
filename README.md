@@ -85,6 +85,8 @@ docker compose --profile media ps
 
 Las interfaces quedan en `127.0.0.1` por defecto: Prowlarr `9696`, Sonarr `8989`, Radarr `7878`, qBittorrent `8080` y Seerr `5055`. Es la opción recomendada en una red doméstica: solo el servidor las ve, así que no quedan alcanzables desde la LAN.
 
+La WebUI de qBittorrent sí queda local, pero el **puerto de BitTorrent** `6881` se publica igual en `TCP` y `UDP` (variable `QBITTORRENT_TORRENT_PORT`): sin él el cliente solo puede iniciar conexiones salientes, acepta muchas menos entrantes y las descargas van más lentas. Para quedar *conectable* hace falta además reenviar `6881` en el router hacia la IP del servidor (por ejemplo `192.168.0.103`); el UPnP no sirve porque qBittorrent corre tras la red NAT de Docker (`no router found` en su log). Verifica el estado en qBittorrent > barra inferior: debe decir *Conectado*.
+
 ### Acceso remoto por túnel SSH
 
 Con las interfaces en `127.0.0.1` no necesitas dominio ni DNS para managearlas desde tu portátil. Un túnel SSH reenvía los puertos que quieras sin abrir nada en el firewall:

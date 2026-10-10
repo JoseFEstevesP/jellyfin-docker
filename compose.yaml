@@ -259,6 +259,14 @@ services:
         published: "${QBITTORRENT_HTTP_PORT:-8080}"
         host_ip: "${QBITTORRENT_HTTP_BIND_ADDRESS:-127.0.0.1}"
         protocol: tcp
+      - name: torrent-tcp
+        target: 6881
+        published: "${QBITTORRENT_TORRENT_PORT:-6881}"
+        protocol: tcp
+      - name: torrent-udp
+        target: 6881
+        published: "${QBITTORRENT_TORRENT_PORT:-6881}"
+        protocol: udp
     volumes:
       - type: bind
         source: ./config/qbittorrent
