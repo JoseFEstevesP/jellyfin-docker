@@ -40,6 +40,27 @@ curl -sS -X POST http://127.0.0.1:8989/api/v3/release \
 
 Ordena siempre por *Seeders* y no por tamaño: un release pequeño con una sola semilla puede tardar más que un pack con diez.
 
+## Cómo hace Sonarr la selección automática
+
+**Sonarr no ordena por semillas.** No existe ningún ajuste de *seeders* en la búsqueda automática: solo puntúa el *indexer* y elige el release de mayor calidad que admita el perfil. Si el perfil permite 720p y hay un 720p con 7 semillas y un 1080p con 300, no hay nada que le diga que prefiera el segundo; la única palanca real es **qué calidades deja entrar el perfil**.
+
+Por eso la elección de releases se controla con el perfil de calidad, no con un número de semillas:
+
+1. Crea un perfil que admita las calidades bien sembradas (aquí, `1080p`) y ponle `upgradeAllowed: false` si no quieres que re-descargue lo que ya tienes.
+2. Asígnalo a la serie. Con `upgradeAllowed: false`, los archivos existentes no se tocan aunque su calidad no esté permitida en el perfil nuevo.
+3. `cutoff` va con el **ID de grupo** (`1002` = WEB 1080p), no con el ID de calidad.
+
+```bash
+# ver el perfil asignado a una serie (id=10 en este despliegue)
+curl -sS -H 'X-Api-Key: <API_KEY>' http://127.0.0.1:8989/api/v3/series/10 | jq .qualityProfileId
+
+# asignar otro perfil
+curl -sS -X PUT -H 'X-Api-Key: <API_KEY>' -H 'Content-Type: application/json' \
+  http://127.0.0.1:8989/api/v3/series/10 -d '{"qualityProfileId":7}'
+```
+
+En este despliegue el perfil **`HD-1080p/720p (prefiere 1080p)`** (id `7`) permite `HDTV-720p`, `WEB 720p`, `Bluray-720p`, `HDTV-1080p`, `WEB 1080p` y `Bluray-1080p`, con `cutoff=1002` y `upgradeAllowed=false`. Lord of Mysteries usa ese perfil; Overlord sigue en el perfil `HD-720p`.
+
 ## Verificar una descarga
 
 La descarga vive en **dos rutas distintas** y conviene distinguirlas:
@@ -124,6 +145,8 @@ Estas cosas ocuparon tiempo y conviene recordarlas:
 - **El blocklist de Sonarr v4 no es accesible por API**: `GET /api/v3/release/blocklist` devuelve `404`. Para bloquear un release, **Activity > History**, clic derecho sobre él > *Blocklist Release*.
 - **Bajar el `cutoff` desbloquea releases que estaban rechazados**, y si hay una búsqueda en curso la completes y los agarra en lote. Revisa la cola antes y después de tocar el perfil de calidad.
 - **El `cutoff` se expresa con el ID de grupo, no de calidad.** Si mandas el ID de una calidad concreta la API responde `Cutoff must be an allowed quality or group`. Los grupos se identifican por valores como `1000`.
+- **Sonarr no rankea por semillas.** La selección automática no tiene en cuenta los *seeders* en ningún sitio; solo elige la mayor calidad que admita el perfil. Si la automatización agarra un release con pocas semillas, revisa qué calidades permite el perfil en vez de buscar un ajuste de semillas que no existe.
+- **Con `upgradeAllowed=false` los archivos existentes no se re-descargan**, aunque su calidad no esté permitida en el perfil. Cambiar de perfil a uno que solo admite 1080p no toca los 720p ya importados; solo afecta a lo que se busque a partir de ahí.
 - **`POST /api/v1/applications/{id}/sync` en Prowlarr devuelve `405`.** La sincronización de indexadores es automática; no hace falta forzarlla.
 - **qBittorrent 5.x rechaza guardar la ruta por API**: `setPreferences` devuelve `400 Bad Request`. Deja el contenedor parado y edita `config/qbittorrent/qBittorrent/qBittorrent.conf`, en `Downloads\SavePath` y `Downloads\TempPath`.
 - **El bind de `.env` puede no ser el real.** Si cambias una dirección, `docker compose ps` y `docker inspect` muestran lo realmente publicado; recrea solo el servicio afectado.
@@ -138,6 +161,7 @@ Estas cosas ocuparon tiempo y conviene recordarlas:
 | La búsqueda devuelve `0` | Episodios en `monitored=False` | Sonarr > Series > Episodes |
 | Solo descarga un episodio y el resto se queda en `0 %` | Cola de qBittorrent: `MaxActiveDownloads=1` bloquea todo detrás del primero | `qBittorrent.conf`, `Session\MaxActiveDownloads`; WebUI > cola |
 | Descargas lentas o pausadas en cero | Pocas semillas, o puerto `6881` sin publicar/sin reenviar | WebUI > torrent > *Peers*; `docker port jellyfin-qbittorrent-1` |
+| La automatización elige siempre releases con pocas semillas | El perfil de calidad admite calidades poco sembradas (p. ej. solo 720p) | Sonarr > serie > *Quality Profile* |
 | Aviso de fallo de hardlink | `chattr +C` en `torrents`, o ruta de guardado distinta de `/media/torrents` | `lsattr -d "$DOWNLOADS_PATH"`, Preferencias de qBittorrent |
 | Aviso de `Cross-device link` | Montajes separados para descargas y biblioteca | `compose.yaml`, montajes de `/media` |
 | Error `mismatching file size` al reiniciar | El torrent ya se importó y su copia salió de `torrents/`; solo es rechequeo | qBittorrent > torrent > *Force Recheck*, o quitarlo sin borrar archivos |
