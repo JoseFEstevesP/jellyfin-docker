@@ -54,6 +54,7 @@ services:
     restart: unless-stopped
     init: true
     stop_grace_period: 30s
+    mem_limit: "${JELLYFIN_MEM_LIMIT:-1g}"
     security_opt:
       - no-new-privileges:true
     logging:
@@ -124,6 +125,7 @@ services:
       CAPTCHA_SOLVER: none
     restart: unless-stopped
     init: true
+    mem_limit: "${FLARESOLVERR_MEM_LIMIT:-512m}"
     security_opt:
       - no-new-privileges:true
     logging:
@@ -259,6 +261,14 @@ services:
         published: "${QBITTORRENT_HTTP_PORT:-8080}"
         host_ip: "${QBITTORRENT_HTTP_BIND_ADDRESS:-127.0.0.1}"
         protocol: tcp
+      - name: torrent-tcp
+        target: 6881
+        published: "${QBITTORRENT_TORRENT_PORT:-6881}"
+        protocol: tcp
+      - name: torrent-udp
+        target: 6881
+        published: "${QBITTORRENT_TORRENT_PORT:-6881}"
+        protocol: udp
     volumes:
       - type: bind
         source: ./config/qbittorrent

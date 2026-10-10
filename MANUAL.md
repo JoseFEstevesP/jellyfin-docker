@@ -71,6 +71,8 @@ Un pack de temporada pesa mucho más que lo que sugiere el título: 13 episodios
 
 La velocidad no depende del tamaño del release sino del **número de semillas**. Un archivo de 200 MB con una sola semilla puede tardar más que un pack de 30 GB con diez, porque con un seed dependes al 100 % de esa persona y su ancho de banda.
 
+Por eso una descarga BitTorrent **no se compara con FDM**: FDM baja por HTTP desde un servidor o CDN que te manda el archivo completo a tu ancho de banda máximo con muchas conexiones en paralelo; aquí la velocidad es la suma del *upload* de las semillas que encuentres. Un release con pocas semillas va lento por su propia naturaleza, no por qBittorrent. Además, si el cliente no es *conectable* (puerto `6881` sin publicar ni reenviar) solo puede iniciar conexiones salientes y acepta menos pares, lo que empeora el resultado.
+
 Fíjate en *Seeders* antes que en el tamaño, y recuerda que *Peers* a 0 con *Seeders* a 1 significa que todo el peso del seed recae en un único upload. Si tras unos minutos no arranca, el seed está ocupado o lento: cancelar y elegir otro release con más semillas suele ser más rápido que esperar.
 
 Para saber si un torrent avanza de verdad, compara el porcentaje entre dos consultas separadas. Si no se mueve, está *stalled* y conviene cambiarlo.
@@ -134,8 +136,11 @@ Estas cosas ocuparon tiempo y conviene recordarlas:
 | Seerr no encuentra nada | Índice de TMDB sin resultados, o caché sin refrescar | Search > *Update* en Seerr |
 | Sonarr no encuentra releases | Episodios sin monitorizar, o índice vacío | Prowlarr > indexador > *Test* |
 | La búsqueda devuelve `0` | Episodios en `monitored=False` | Sonarr > Series > Episodes |
+| Solo descarga un episodio y el resto se queda en `0 %` | Cola de qBittorrent: `MaxActiveDownloads=1` bloquea todo detrás del primero | `qBittorrent.conf`, `Session\MaxActiveDownloads`; WebUI > cola |
+| Descargas lentas o pausadas en cero | Pocas semillas, o puerto `6881` sin publicar/sin reenviar | WebUI > torrent > *Peers*; `docker port jellyfin-qbittorrent-1` |
 | Aviso de fallo de hardlink | `chattr +C` en `torrents`, o ruta de guardado distinta de `/media/torrents` | `lsattr -d "$DOWNLOADS_PATH"`, Preferencias de qBittorrent |
 | Aviso de `Cross-device link` | Montajes separados para descargas y biblioteca | `compose.yaml`, montajes de `/media` |
+| Error `mismatching file size` al reiniciar | El torrent ya se importó y su copia salió de `torrents/`; solo es rechequeo | qBittorrent > torrent > *Force Recheck*, o quitarlo sin borrar archivos |
 | Jellyfin no ve un título nuevo | No se ha reescaneado la biblioteca | Sonarr > *Refresh Series*, o Jellyfin > Biblioteca > *Scan All* |
 | La importación se queda pendiente | La copia parcial no ha terminado | qBittorrent: el torrent no llega al 100 % |
 
